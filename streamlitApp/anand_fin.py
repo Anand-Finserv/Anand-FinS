@@ -70,7 +70,7 @@ def get_market_status():
 
 def login_page():
     st.markdown(f'<div class="ticker-wrap"><div class="ticker">{get_ticker_data()}</div></div>', unsafe_allow_html=True)
-    st.title("🚀 Anand Finserv Pro")
+    st.title("Anand Finserv")
     col1, col2, col3 = st.columns([1,1.5,1])
     with col2:
         with st.container(border=True):
@@ -176,4 +176,5 @@ if st.session_state.logged_in:
     else: client_dashboard()
 else:
     login_page()
+
 
