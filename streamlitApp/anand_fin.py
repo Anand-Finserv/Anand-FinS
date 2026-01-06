@@ -58,8 +58,12 @@ def get_ticker_data():
 def get_market_status():
     ist = pytz.timezone('Asia/Kolkata')
     now = datetime.now(ist)
-    if now.weekday() < 5 and (now.replace(hour=9, minute=15) <= now <= now.replace(hour=15, 30)):
-        return "🟢 MARKET OPEN"
+    # Market: Monday(0) to Friday(4), Time: 09:15 to 15:30
+    if now.weekday() < 5:
+        market_start = now.replace(hour=9, minute=15, second=0, microsecond=0)
+        market_end = now.replace(hour=15, minute=30, second=0, microsecond=0)
+        if market_start <= now <= market_end:
+            return "🟢 MARKET OPEN"
     return "🔴 MARKET CLOSED"
 
 # --- 5. APP VIEWS ---
@@ -172,3 +176,4 @@ if st.session_state.logged_in:
     else: client_dashboard()
 else:
     login_page()
+
