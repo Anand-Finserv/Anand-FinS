@@ -46,7 +46,7 @@ if 'logged_in' not in st.session_state:
 # --- 4. MARKET HELPERS ---
 @st.cache_data(ttl=60)
 def get_ticker_data():
-    indices = {"NIFTY 50": "^NSEI", "SENSEX": "^BSESN", "BANK NIFTY": "^NSEBANK": "NIFTYFINSERVICE": "NIFTY_FIN_SERVICE.NS":}
+    indices = {"NIFTY 50": "^NSEI", "SENSEX": "^BSESN", "BANK NIFTY": "^NSEBANK":}
     vals = []
     for n, s in indices.items():
         try:
@@ -176,6 +176,7 @@ if st.session_state.logged_in:
     else: client_dashboard()
 else:
     login_page()
+
 
 
 
