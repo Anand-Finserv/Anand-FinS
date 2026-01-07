@@ -14,7 +14,7 @@ st.set_page_config(page_title="Anand Finserv", page_icon="📈", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
-    return conn.read(ttl="5s") # 5 second cache taaki data jaldi dikhe
+    return conn.read(worksheet="Sheet1", ttl="5s") # 5 second cache taaki data jaldi dikhe
 
 def save_to_sheet(df_to_save):
     conn.update(data=df_to_save)
@@ -176,6 +176,7 @@ if st.session_state.logged_in:
     else: client_dashboard()
 else:
     login_page()
+
 
 
 
