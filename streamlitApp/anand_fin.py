@@ -106,17 +106,59 @@ def admin_dashboard():
     df = load_data()
     st.dataframe(df)
 
-def client_dashboard():
-    # --- HEADER ---
+ddef client_dashboard():
     st.markdown("## 📊 Research 360 Dashboard")
     
-    col_logout, col_refresh = st.columns([8, 1])
-    with col_refresh:
-        if st.button("🔄"): st.rerun()
-    with col_logout:
-        if st.button("Logout"):
-            st.session_state.logged_in = False
-            st.rerun()
+    # --- LOAD LIVE LEVELS FROM YOUR SHEET ---
+    df = load_data()
+    
+    if df.empty:
+        st.warning("⚠️ Abhi koi levels available nahi hain. Admin panel se add karein.")
+        return
+
+    # Filter only Active levels
+    active_calls = df[df['status'] == 'Active']
+
+    col_left, col_right = st.columns([1, 2])
+    
+    with col_left:
+        st.subheader("📡 Your Live Calls")
+        if active_calls.empty:
+            st.info("No Active Calls found in your Google Sheet.")
+        else:
+            for index, row in active_calls.iterrows():
+                # Har level ke liye ek card aur button
+                st.markdown(f"""
+                <div style='background-color: #1e2130; padding: 10px; border-radius: 5px; border-left: 5px solid {"#00c853" if row["type"]=="BUY" else "#ff4b4b"}; margin-bottom: 5px;'>
+                    <h4 style='margin:0;'>{row['stock']}</h4>
+                    <p style='margin:0;'>Target: {row['target']} | SL: {row['sl']}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Button click karne par session state update hogi
+                if st.button(f"View {row['stock']} Chart", key=f"btn_{row['id']}"):
+                    st.session_state.selected_ticker = row['stock']
+
+    with col_right:
+        # Agar koi ticker select hua hai sheet se, tabhi dikhao
+        if 'selected_ticker' in st.session_state:
+            ticker = st.session_state.selected_ticker
+            st.markdown(f"### 📈 Live Analysis: {ticker}")
+            
+            hist, info = get_stock_data(ticker)
+            
+            if hist is not None and not hist.empty:
+                # Live Price calculation
+                cp = hist['Close'].iloc[-1]
+                st.metric(label=f"{ticker} Live Price", value=f"₹{cp:.2f}")
+                
+                # Show Chart
+                fig = plot_candle_chart(hist, ticker)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.error(f"Ticker '{ticker}' ka data nahi mil raha. Check spelling in Sheet (e.g., RELIANCE).")
+        else:
+            st.info("👈 Baayi taraf (left) kisi stock par click karein uska live chart dekhne ke liye.")
 
     # --- LOAD LIVE LEVELS ---
     df = load_data()
@@ -202,6 +244,7 @@ if st.session_state.logged_in:
         client_dashboard()
 else:
     login_page()
+
 
 
 
