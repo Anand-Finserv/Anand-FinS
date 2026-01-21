@@ -106,7 +106,7 @@ def admin_dashboard():
     df = load_data()
     st.dataframe(df)
 
-ddef client_dashboard():
+def client_dashboard():
     st.markdown("## 📊 Research 360 Dashboard")
     
     # --- LOAD LIVE LEVELS FROM YOUR SHEET ---
@@ -244,6 +244,7 @@ if st.session_state.logged_in:
         client_dashboard()
 else:
     login_page()
+
 
 
 
