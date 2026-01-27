@@ -3,14 +3,28 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
+import pytz
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Anand Finserv Auto", page_icon="📈", layout="centered")
+st.set_page_config(page_title="Anand Finserv AI", page_icon="📈", layout="centered")
 
 # --- CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- FUNCTIONS ---
+
+def get_live_indices():
+    """Nifty aur BankNifty ka live data laata hai"""
+    try:
+        tickers = ['^NSEI', '^NSEBANK']
+        data = yf.download(tickers, period="1d", interval="1m", progress=False)['Close']
+        n_price = data['^NSEI'].iloc[-1]
+        n_prev = data['^NSEI'].iloc[0]
+        b_price = data['^NSEBANK'].iloc[-1]
+        b_prev = data['^NSEBANK'].iloc[0]
+        return n_price, n_price-n_prev, b_price, b_price-b_prev
+    except:
+        return 0, 0, 0, 0
 
 def get_cmp(ticker):
     try:
@@ -22,7 +36,7 @@ def get_cmp(ticker):
 
 def load_data():
     try:
-        data = conn.read(worksheet="Sheet1", ttl="2s") # Fast refresh
+        data = conn.read(worksheet="Sheet1", ttl="2s")
         return data.fillna("")
     except:
         return pd.DataFrame(columns=['id', 'stock', 'type', 'entry', 'target', 'sl', 'status', 'exit_price', 'date'])
@@ -35,152 +49,111 @@ def save_data(df):
     except:
         return False
 
-# --- 🤖 AUTOMATIC SYSTEM LOGIC ---
+# --- 🤖 AUTO TRACKER LOGIC ---
 def run_auto_tracker(df):
-    """Yeh function check karega ki Target ya SL hit hua ya nahi"""
     updated = False
-    
     for index, row in df.iterrows():
         if row['status'] == 'Active':
-            current_price = get_cmp(row['stock'])
-            if current_price == 0: continue
+            cp = get_cmp(row['stock'])
+            if cp == 0: continue
             
-            target = float(row['target'])
-            sl = float(row['sl'])
+            t, s = float(row['target']), float(row['sl'])
             
-            # BUY Order Logic
             if row['type'] == "BUY":
-                if current_price >= target:
-                    df.at[index, 'status'] = 'Target Hit ✅'
-                    df.at[index, 'exit_price'] = current_price
-                    updated = True
-                elif current_price <= sl:
-                    df.at[index, 'status'] = 'SL Hit ❌'
-                    df.at[index, 'exit_price'] = current_price
-                    updated = True
-            
-            # SELL Order Logic
+                if cp >= t:
+                    df.at[index, 'status'], df.at[index, 'exit_price'], updated = 'Target Hit ✅', cp, True
+                elif cp <= s:
+                    df.at[index, 'status'], df.at[index, 'exit_price'], updated = 'SL Hit ❌', cp, True
             elif row['type'] == "SELL":
-                if current_price <= target:
-                    df.at[index, 'status'] = 'Target Hit ✅'
-                    df.at[index, 'exit_price'] = current_price
-                    updated = True
-                elif current_price >= sl:
-                    df.at[index, 'status'] = 'SL Hit ❌'
-                    df.at[index, 'exit_price'] = current_price
-                    updated = True
-    
+                if cp <= t:
+                    df.at[index, 'status'], df.at[index, 'exit_price'], updated = 'Target Hit ✅', cp, True
+                elif cp >= s:
+                    df.at[index, 'status'], df.at[index, 'exit_price'], updated = 'SL Hit ❌', cp, True
     if updated:
         save_data(df)
         st.rerun()
 
-# --- MAIN APP ---
+# --- LOGIN SYSTEM ---
+def login_page():
+    st.markdown("<h2 style='text-align: center;'>🔐 Anand Finserv Login</h2>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login"):
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button("Login"):
+                if u == "admin" and p == "anand123":
+                    st.session_state.logged_in, st.session_state.role = True, "Admin"
+                    st.rerun()
+                elif u == "client" and p == "client123":
+                    st.session_state.logged_in, st.session_state.role = True, "Client"
+                    st.rerun()
+                else: st.error("Wrong ID/PW")
 
-# 1. Data Load karein
-df = load_data()
-
-# 2. Auto Tracker chalayein (Background check)
-if not df.empty:
-    run_auto_tracker(df)
-
-# --- UI TABS ---
-st.title("Anand Finserv Pro")
-tab1, tab2 = st.tabs(["🚀 Live Calls", "📜 Past Performance"])
-
-with tab1:
-    active = df[df['status'] == 'Active']
-    if active.empty:
-        st.info("No Active Calls")
-    else:
-        for idx, row in active.iterrows():
-            st.write(f"**{row['stock']}** | CMP: {get_cmp(row['stock'])} | Target: {row['target']}")
-
-with tab2:
-    # Jo active nahi hain wo yahan dikhenge
-    past = df[df['status'] != 'Active']
-    st.table(past[['date', 'stock', 'type', 'status', 'entry', 'exit_price']])
-
-# (Login & Admin logic purane code jaisi hi rahegi) # Divider line
-
-# --- LOGIN & DASHBOARD ---
-
-# Sidebar for Login
-st.sidebar.header("🔐 Login Panel")
-user_type = st.sidebar.radio("Select Role", ["Client", "Admin"])
-
-if user_type == "Admin":
-    st.sidebar.markdown("---")
-    password = st.sidebar.text_input("Admin Password", type="password")
-    
-    if password == "anand123":  
-        st.header("👨‍💻 Admin Panel")
-        
-        # Add New Level Form
-        with st.form("add_level"):
-            st.subheader("Add New Call")
-            col1, col2 = st.columns(2)
-            stock = col1.text_input("Stock Name (e.g. RELIANCE)")
-            call_type = col2.selectbox("Type", ["BUY", "SELL"])
-            
-            c1, c2, c3 = st.columns(3)
-            entry = c1.number_input("Entry Price")
-            target = c2.number_input("Target")
-            sl = c3.number_input("Stop Loss")
-            
-            if st.form_submit_button("🚀 Publish Level"):
-                df = load_data()
-                new_id = len(df) + 1
-                new_row = pd.DataFrame([{
-                    "id": new_id, "stock": stock.upper(), "type": call_type,
-                    "entry": entry, "target": target, "sl": sl,
-                    "status": "Active", "exit_price": 0.0, "date": datetime.now().strftime("%Y-%m-%d")
-                }])
-                save_data(pd.concat([df, new_row], ignore_index=True))
-                st.success(f"{stock} Added!")
-                st.rerun()
-        
-        # Manage Existing Levels
-        st.subheader("📋 Manage Levels")
-        df = load_data()
-        if not df.empty:
-            edited_df = st.data_editor(df, num_rows="dynamic")
-            if st.button("💾 Update Changes"):
-                save_data(edited_df)
-                st.success("Updated!")
-
-    elif password:
-        st.sidebar.error("Wrong Password")
-
-else:
-    # --- CLIENT DASHBOARD ---
-    st.header("📡 Live Calls Dashboard")
-    
-    if st.button("🔄 Refresh Market Data"):
+# --- DASHBOARDS ---
+def admin_dashboard(df):
+    st.title("👨‍💻 Admin Panel")
+    if st.button("Logout"): 
+        st.session_state.logged_in = False
         st.rerun()
     
-    df = load_data()
+    with st.form("new"):
+        st.subheader("Add Call")
+        c1, c2 = st.columns(2)
+        s_name = c1.text_input("Stock Name")
+        c_type = c2.selectbox("Type", ["BUY", "SELL"])
+        c3, c4, c5 = st.columns(3)
+        ent, tgt, stl = c3.number_input("Entry"), c4.number_input("Target"), c5.number_input("SL")
+        if st.form_submit_button("Publish"):
+            new_row = pd.DataFrame([{"id": len(df)+1, "stock": s_name.upper(), "type": c_type, "entry": ent, "target": tgt, "sl": stl, "status": "Active", "exit_price": 0, "date": datetime.now().strftime("%Y-%m-%d")}])
+            save_data(pd.concat([df, new_row], ignore_index=True))
+            st.rerun()
     
-    if not df.empty and 'status' in df.columns:
-        active_calls = df[df['status'] == 'Active']
-        if not active_calls.empty:
-            for index, row in active_calls.iterrows():
-                card_color = "#00C853" if row['type'] == "BUY" else "#FF5252" # Green/Red Hex codes
-                
+    st.subheader("Manage Records")
+    edited = st.data_editor(df)
+    if st.button("Save Changes"):
+        save_data(edited)
+        st.rerun()
+
+def client_dashboard(df):
+    # Live Indices Header
+    n, nc, b, bc = get_live_indices()
+    c1, c2 = st.columns(2)
+    c1.metric("NIFTY 50", f"{n:.2f}", f"{nc:.2f}")
+    c2.metric("BANK NIFTY", f"{b:.2f}", f"{bc:.2f}")
+    st.markdown("---")
+
+    tab1, tab2 = st.tabs(["🚀 Live Calls", "📜 Past Performance"])
+    
+    with tab1:
+        active = df[df['status'] == 'Active']
+        if active.empty: st.info("No Active Calls")
+        else:
+            for i, r in active.iterrows():
+                cp = get_cmp(r['stock'])
+                color = "#00c853" if r['type'] == "BUY" else "#ff4b4b"
                 st.markdown(f"""
-                <div style="border-left: 5px solid {card_color}; background-color: #262730; padding: 15px; border-radius: 5px; margin-bottom: 10px;">
-                    <h3 style="margin: 0;">{row['stock']} <span style="color: {card_color}; font-size: 20px;">({row['type']})</span></h3>
-                    <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-                        <span>🚀 Entry: <b>{row['entry']}</b></span>
-                        <span>🎯 Target: <b>{row['target']}</b></span>
-                        <span>🛑 SL: <b>{row['sl']}</b></span>
-                    </div>
+                <div style="border-left:5px solid {color}; background:#1e2130; padding:15px; border-radius:5px; margin-bottom:10px;">
+                    <h3 style="margin:0;">{r['stock']} ({r['type']})</h3>
+                    <p style="margin:5px 0;">Entry: {r['entry']} | Target: {r['target']} | SL: {r['sl']}</p>
+                    <h4 style="margin:0; color:{color};">CMP: {cp}</h4>
                 </div>
                 """, unsafe_allow_html=True)
-        else:
-            st.info("✅ No Active Calls.")
-    else:
-        st.warning("Loading data...")
 
+    with tab2:
+        past = df[df['status'] != 'Active']
+        st.dataframe(past[['date', 'stock', 'type', 'status', 'entry', 'exit_price']], use_container_width=True)
+
+# --- MAIN ENGINE ---
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    login_page()
+else:
+    data = load_data()
+    run_auto_tracker(data) # Auto Check
+    if st.session_state.role == "Admin": admin_dashboard(data)
+    else: client_dashboard(data)
 
 
 
