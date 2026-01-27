@@ -3,52 +3,26 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
-import pytz
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Anand Finserv Live", page_icon="📈", layout="centered")
+st.set_page_config(page_title="Anand Finserv Auto", page_icon="📈", layout="centered")
 
-# --- CUSTOM CSS FOR FLOATING INDEX ---
-st.markdown("""
-    <style>
-    .metric-container {
-        background-color: #f0f2f6;
-        padding: 10px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        text-align: center;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- GOOGLE SHEETS CONNECTION ---
+# --- CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- FUNCTIONS ---
 
-def get_live_indices():
-    """Nifty aur BankNifty ka live data laata hai"""
+def get_cmp(ticker):
     try:
-        # Nifty 50 (^NSEI) and Bank Nifty (^NSEBANK)
-        tickers = ['^NSEI', '^NSEBANK']
-        data = yf.download(tickers, period="1d", interval="1m", progress=False)['Close']
-        
-        # Latest price nikalna
-        nifty_price = data['^NSEI'].iloc[-1]
-        nifty_open = data['^NSEI'].iloc[0]
-        nifty_change = nifty_price - nifty_open
-        
-        bank_price = data['^NSEBANK'].iloc[-1]
-        bank_open = data['^NSEBANK'].iloc[0]
-        bank_change = bank_price - bank_open
-        
-        return nifty_price, nifty_change, bank_price, bank_change
-    except Exception as e:
-        return 0, 0, 0, 0
+        if not ticker.endswith(".NS"): ticker = ticker + ".NS"
+        stock = yf.Ticker(ticker)
+        return round(stock.history(period="1d")['Close'].iloc[-1], 2)
+    except:
+        return 0.0
 
 def load_data():
     try:
-        data = conn.read(worksheet="Sheet1", ttl="5s")
+        data = conn.read(worksheet="Sheet1", ttl="2s") # Fast refresh
         return data.fillna("")
     except:
         return pd.DataFrame(columns=['id', 'stock', 'type', 'entry', 'target', 'sl', 'status', 'exit_price', 'date'])
@@ -58,25 +32,75 @@ def save_data(df):
         conn.update(worksheet="Sheet1", data=df)
         st.cache_data.clear()
         return True
-    except Exception as e:
-        st.error(f"Save Error: {e}")
+    except:
         return False
 
-# --- LIVE INDICES DISPLAY (TOP HEADER) ---
-st.title("📈 Anand Finserv Live")
+# --- 🤖 AUTOMATIC SYSTEM LOGIC ---
+def run_auto_tracker(df):
+    """Yeh function check karega ki Target ya SL hit hua ya nahi"""
+    updated = False
+    
+    for index, row in df.iterrows():
+        if row['status'] == 'Active':
+            current_price = get_cmp(row['stock'])
+            if current_price == 0: continue
+            
+            target = float(row['target'])
+            sl = float(row['sl'])
+            
+            # BUY Order Logic
+            if row['type'] == "BUY":
+                if current_price >= target:
+                    df.at[index, 'status'] = 'Target Hit ✅'
+                    df.at[index, 'exit_price'] = current_price
+                    updated = True
+                elif current_price <= sl:
+                    df.at[index, 'status'] = 'SL Hit ❌'
+                    df.at[index, 'exit_price'] = current_price
+                    updated = True
+            
+            # SELL Order Logic
+            elif row['type'] == "SELL":
+                if current_price <= target:
+                    df.at[index, 'status'] = 'Target Hit ✅'
+                    df.at[index, 'exit_price'] = current_price
+                    updated = True
+                elif current_price >= sl:
+                    df.at[index, 'status'] = 'SL Hit ❌'
+                    df.at[index, 'exit_price'] = current_price
+                    updated = True
+    
+    if updated:
+        save_data(df)
+        st.rerun()
 
-# Data fetch karna
-nifty, n_change, bank, b_change = get_live_indices()
+# --- MAIN APP ---
 
-# Top par indices dikhana (Floating look)
-with st.container():
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(label="NIFTY 50", value=f"{nifty:.2f}", delta=f"{n_change:.2f}")
-    with col2:
-        st.metric(label="BANK NIFTY", value=f"{bank:.2f}", delta=f"{b_change:.2f}")
+# 1. Data Load karein
+df = load_data()
 
-st.markdown("---") # Divider line
+# 2. Auto Tracker chalayein (Background check)
+if not df.empty:
+    run_auto_tracker(df)
+
+# --- UI TABS ---
+st.title("Anand Finserv Pro")
+tab1, tab2 = st.tabs(["🚀 Live Calls", "📜 Past Performance"])
+
+with tab1:
+    active = df[df['status'] == 'Active']
+    if active.empty:
+        st.info("No Active Calls")
+    else:
+        for idx, row in active.iterrows():
+            st.write(f"**{row['stock']}** | CMP: {get_cmp(row['stock'])} | Target: {row['target']}")
+
+with tab2:
+    # Jo active nahi hain wo yahan dikhenge
+    past = df[df['status'] != 'Active']
+    st.table(past[['date', 'stock', 'type', 'status', 'entry', 'exit_price']])
+
+# (Login & Admin logic purane code jaisi hi rahegi) # Divider line
 
 # --- LOGIN & DASHBOARD ---
 
@@ -156,6 +180,7 @@ else:
             st.info("✅ No Active Calls.")
     else:
         st.warning("Loading data...")
+
 
 
 
