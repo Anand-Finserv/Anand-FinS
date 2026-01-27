@@ -11,12 +11,10 @@ st.set_page_config(page_title="Anand Finserv Pro", page_icon="📈", layout="cen
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
+    .login-box { padding: 20px; border-radius: 10px; background-color: #262730; margin-top: 50px; }
     .card { padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: #1e2130; }
     .buy-card { border-left: 5px solid #00c853; }
     .sell-card { border-left: 5px solid #ff4b4b; }
-    
-    /* Table Styling */
-    .stDataFrame { border: 1px solid #333; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -28,9 +26,12 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def get_cmp(ticker):
     """Yahoo Finance se Live Price lata hai"""
     try:
+        # Agar .NS nahi laga hai to laga do
         if not ticker.endswith(".NS") and not ticker.endswith(".BO"):
             ticker = ticker + ".NS"
+        
         stock = yf.Ticker(ticker)
+        # Fast fetch ke liye 'fast_info' ya last history
         price = stock.history(period="1d")['Close'].iloc[-1]
         return round(price, 2)
     except:
@@ -40,9 +41,11 @@ def load_data():
     """Sheet se data read karta hai"""
     try:
         data = conn.read(worksheet="Sheet1", ttl="5s")
+        # Null values ko empty string bana do taaki error na aaye
         return data.fillna("")
     except:
-        return pd.DataFrame(columns=['id', 'stock', 'type', 'entry', 'target', 'sl', 'status', 'exit_price', 'date'])
+        # Agar connection fail ho ya sheet khali ho, to Empty DataFrame bhejo (Fake data nahi)
+        return pd.DataFrame(columns=['id', 'stock', 'type', 'entry', 'target', 'sl', 'status'])
 
 def save_data(df):
     """Sheet me data save karta hai"""
@@ -54,42 +57,31 @@ def save_data(df):
         st.error(f"Save Error: {e}")
         return False
 
-def calculate_pnl(row):
-    """Profit/Loss Points calculate karta hai"""
-    try:
-        entry = float(row['entry'])
-        exit_p = float(row['exit_price'])
-        
-        if exit_p == 0: return 0  # Agar exit price nahi dala to 0
-        
-        if row['type'] == "BUY":
-            return round(exit_p - entry, 2)
-        else: # SELL
-            return round(entry - exit_p, 2)
-    except:
-        return 0
-
 # --- PAGES ---
 
 def login_page():
-    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>🔐 Anand Finserv Login</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔐 Anand Finserv Login</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         with st.form("login_form"):
             username = st.text_input("Username")
             password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Login Securely")
+            submitted = st.form_submit_button("Login")
             
             if submitted:
+                # ADMIN LOGIN
                 if username == "admin" and password == "anand123":
                     st.session_state.logged_in = True
                     st.session_state.role = "Admin"
                     st.rerun()
+                
+                # CLIENT LOGIN
                 elif username == "client" and password == "client123":
                     st.session_state.logged_in = True
                     st.session_state.role = "Client"
                     st.rerun()
+                
                 else:
                     st.error("Invalid Username or Password")
 
@@ -113,11 +105,9 @@ def admin_dashboard():
         target = c4.number_input("Target", min_value=0.0)
         sl = c5.number_input("Stop Loss", min_value=0.0)
         
-        if st.form_submit_button("Publish Call"):
+        if st.form_submit_button("Publish"):
             df = load_data()
             new_id = len(df) + 1
-            today_date = pd.Timestamp.now().strftime("%Y-%m-%d")
-            
             new_row = pd.DataFrame([{
                 "id": new_id,
                 "stock": stock_name.upper(),
@@ -125,11 +115,10 @@ def admin_dashboard():
                 "entry": entry,
                 "target": target,
                 "sl": sl,
-                "status": "Active",
-                "exit_price": 0.0,
-                "date": today_date
+                "status": "Active"
             }])
             
+            # Agar purana data hai to usme jodo, nahi to naya banao
             if not df.empty:
                 updated_df = pd.concat([df, new_row], ignore_index=True)
             else:
@@ -139,125 +128,87 @@ def admin_dashboard():
             st.success(f"{stock_name} Added!")
             st.rerun()
 
-    # 2. MANAGE LEVELS (Edit / Close Trade)
+    # 2. MANAGE LEVELS
     st.markdown("---")
-    st.subheader("📋 Manage Active Levels (Close Trades Here)")
-    st.info("💡 To Close a trade: Change Status to 'Target Hit'/'SL Hit' AND enter Exit Price.")
-    
+    st.subheader("📋 Manage Active Levels")
     df = load_data()
+    
     if not df.empty:
-        # User can edit table directly
         edited_df = st.data_editor(df, num_rows="dynamic")
-        
-        if st.button("💾 Save Database Changes"):
+        if st.button("💾 Save Changes"):
             save_data(edited_df)
-            st.success("Database Updated Successfully!")
+            st.success("Database Updated!")
     else:
-        st.info("No data found.")
+        st.info("No data in sheet.")
 
 def client_dashboard():
-    st.title("📡 Anand Finserv Dashboard")
+    st.title("📡 Live Calls Dashboard")
     
-    col_refresh, col_logout = st.columns([4, 1])
-    with col_refresh:
-        if st.button("🔄 Refresh Data"):
+    col_btn, col_logout = st.columns([4, 1])
+    with col_btn:
+        if st.button("🔄 Refresh Prices"):
             st.rerun()
     with col_logout:
         if st.button("Logout"):
             st.session_state.logged_in = False
             st.rerun()
     
-    # --- TABS FOR VIEW ---
-    tab1, tab2 = st.tabs(["🚀 Live Calls", "📜 Past Performance"])
+    st.markdown("---")
     
     df = load_data()
     
-    # --- TAB 1: LIVE CALLS ---
-    with tab1:
-        if df.empty:
-            st.info("No Data Available.")
-        else:
-            # Filter Active
-            if 'status' in df.columns:
-                active_calls = df[df['status'] == 'Active']
-            else:
-                active_calls = df
+    # Check if data exists
+    if df.empty:
+        st.info("📭 No Active Calls Available.")
+        return
+
+    # Filter Active Calls
+    if 'status' in df.columns:
+        active_calls = df[df['status'] == 'Active']
+    else:
+        active_calls = df # Agar status column nahi hai to sab dikhao
+
+    if active_calls.empty:
+        st.info("📭 No Active Calls Today.")
+    else:
+        # Cards Display Loop
+        for index, row in active_calls.iterrows():
+            # Get Live CMP
+            cmp = get_cmp(row['stock'])
             
-            if active_calls.empty:
-                st.info("✅ No Open Positions. Market is calm.")
-            else:
-                for index, row in active_calls.iterrows():
-                    cmp = get_cmp(row['stock'])
-                    card_class = "buy-card" if row['type'] == "BUY" else "sell-card"
-                    text_color = "#00e676" if row['type'] == "BUY" else "#ff5252"
-                    
-                    # P/L Color for CMP
-                    pl_color = "#ffffff"
-                    if cmp > 0:
-                        if row['type'] == "BUY":
-                            pl_color = "#00e676" if cmp >= row['entry'] else "#ff5252"
-                        else:
-                            pl_color = "#00e676" if cmp <= row['entry'] else "#ff5252"
-
-                    st.markdown(f"""
-                    <div class="card {card_class}">
-                        <div style="display:flex; justify-content:space-between;">
-                            <h3 style="margin:0;">{row['stock']}</h3>
-                            <h3 style="margin:0; color:{text_color};">{row['type']}</h3>
-                        </div>
-                        <hr style="border-color: #444;">
-                        <div style="display:flex; justify-content:space-between; font-size:18px;">
-                            <span>Entry: {row['entry']}</span>
-                            <span>Target: {row['target']}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; font-size:18px; margin-top:5px;">
-                            <span>SL: <span style="color:#ff5252">{row['sl']}</span></span>
-                            <span>CMP: <b style="color:{pl_color}; font-size:22px;">{cmp}</b></span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-    # --- TAB 2: PAST PERFORMANCE ---
-    with tab2:
-        st.subheader("📊 Trade History")
-        
-        if df.empty or 'status' not in df.columns:
-            st.info("No history found.")
-        else:
-            # Filter NOT Active (Closed/Target Hit/SL Hit)
-            history = df[df['status'] != 'Active'].copy()
+            # Color Logic
+            card_class = "buy-card" if row['type'] == "BUY" else "sell-card"
+            text_color = "#00e676" if row['type'] == "BUY" else "#ff5252"
             
-            if history.empty:
-                st.info("No closed trades yet.")
-            else:
-                # Calculate Points
-                history['Points Booked'] = history.apply(calculate_pnl, axis=1)
-                
-                # Show key columns
-                display_cols = ['date', 'stock', 'type', 'status', 'entry', 'exit_price', 'Points Booked']
-                
-                # Verify columns exist before showing
-                available_cols = [c for c in display_cols if c in history.columns]
-                final_history = history[available_cols]
-                
-                # Color Styling function
-                def highlight_pnl(val):
-                    color = '#00e676' if val > 0 else '#ff5252' if val < 0 else 'white'
-                    return f'color: {color}; font-weight: bold;'
+            # P/L Calculation (Rough)
+            pl_color = "white"
+            if cmp > 0:
+                if row['type'] == "BUY":
+                    pl_color = "#00e676" if cmp > row['entry'] else "#ff5252"
+                else: # SELL
+                    pl_color = "#00e676" if cmp < row['entry'] else "#ff5252"
 
-                # Display styled dataframe
-                st.dataframe(
-                    final_history.style.map(highlight_pnl, subset=['Points Booked']),
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                # Total PnL Summary
-                total_pts = history['Points Booked'].sum()
-                color = "green" if total_pts >= 0 else "red"
-                st.markdown(f"### 🏁 Total Points Booked: :{color}[{total_pts}]")
+            # HTML Card
+            st.markdown(f"""
+            <div class="card {card_class}">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h2 style="margin:0;">{row['stock']}</h2>
+                    <h3 style="margin:0; color:{text_color};">{row['type']}</h3>
+                </div>
+                <hr style="border-color: #333;">
+                <div style="display:flex; justify-content:space-between; font-size: 18px;">
+                    <span>Entry: <b>{row['entry']}</b></span>
+                    <span>Target: <b>{row['target']}</b></span>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size: 18px; margin-top:5px;">
+                    <span>SL: <span style="color:#ff5252;">{row['sl']}</span></span>
+                    <span>CMP: <b style="color:{pl_color}; font-size: 22px;">{cmp}</b></span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 # --- MAIN LOGIC ---
+
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
@@ -268,8 +219,6 @@ if st.session_state.logged_in:
         client_dashboard()
 else:
     login_page()
-
-
 
 
 
