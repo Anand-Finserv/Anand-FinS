@@ -84,7 +84,7 @@ def login_page():
             u = st.text_input("Client ID")
             p = st.text_input("Password", type="password")
             if st.form_submit_button("Login as Client"):
-                if u == "client" and p == "client123":
+                if u == "client" and p == "ramsagar26":
                     st.session_state.logged_in = True
                     st.session_state.role = "Client"
                     st.query_params["auth"] = "client_secure"
@@ -162,3 +162,4 @@ else:
     run_auto_tracker(data)
     if st.session_state.role == "Admin": admin_dashboard(data)
     else: client_dashboard(data)
+
